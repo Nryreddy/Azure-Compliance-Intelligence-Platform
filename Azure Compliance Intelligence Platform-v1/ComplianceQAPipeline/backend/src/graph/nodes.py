@@ -4,6 +4,7 @@ import logging
 import re
 from typing import Dict, Any, List
 from dotenv import load_dotenv
+from pydantic import BaseModel, Field
 
 load_dotenv()
 
@@ -77,6 +78,19 @@ def index_video_node(state:VideoAuditState) -> Dict[str,Any]:
             "ocr_text" : []
         }
         
+# --- SCHEMAS FOR STRUCTURED OUTPUT ---
+class ComplianceIssue(BaseModel):
+    category: str = Field(description="The category of the violation (e.g., Claim Validation)")
+    severity: str = Field(description="Severity: CRITICAL or WARNING")
+    description: str = Field(description="Detailed explanation of the violation with timestamps/text evidence")
+
+class AuditReport(BaseModel):
+    reasoning_process: str = Field(description="Step-by-step chain of thought analyzing the transcript against the rules.")
+    status: str = Field(description="Final status: PASS or FAIL")
+    final_report: str = Field(description="A concise summary of the findings.")
+    compliance_results: List[ComplianceIssue] = Field(description="List of identified violations, if any.")
+
+
 # --- NODE 2: THE COMPLIANCE AUDITOR ---
 def audit_content_node(state: VideoAuditState) -> Dict[str, Any]:
     """
@@ -93,10 +107,12 @@ def audit_content_node(state: VideoAuditState) -> Dict[str, Any]:
             "final_report": "Audit skipped because video processing failed (No Transcript)."
         }
 
-    # Initialize Clients
+    # Initialize Clients with Deterministic Settings
     llm = AzureChatOpenAI(
         azure_deployment=os.getenv("AZURE_OPENAI_CHAT_DEPLOYMENT"),
-        api_version=os.getenv("AZURE_OPENAI_API_VERSION")
+        api_version=os.getenv("AZURE_OPENAI_API_VERSION"),
+        temperature=0.0,
+        model_kwargs={"seed": 42}
     )
 
     embeddings = AzureOpenAIEmbeddings(
@@ -116,6 +132,8 @@ def audit_content_node(state: VideoAuditState) -> Dict[str, Any]:
     query_text = f"{transcript} {' '.join(ocr_text)}"
     docs = vector_store.similarity_search(query_text, k=3)
     
+    # Sort docs by content to guarantee deterministic context ordering
+    docs = sorted(docs, key=lambda x: x.page_content)
     retrieved_rules = "\n\n".join([doc.page_content for doc in docs])
     
     # --- UPDATED PROMPT WITH STRICT SCHEMA ---
@@ -127,21 +145,9 @@ def audit_content_node(state: VideoAuditState) -> Dict[str, Any]:
     
     INSTRUCTIONS:
     1. Analyze the Transcript and OCR text below.
-    2. Identify ANY violations of the rules.
-    3. Return strictly JSON in the following format:
-    
-    {{
-        "compliance_results": [
-            {{
-                "category": "Claim Validation",
-                "severity": "CRITICAL",
-                "description": "Explanation of the violation..."
-            }}
-        ],
-        "status": "FAIL", 
-        "final_report": "Summary of findings..."
-    }}
-
+    2. Write out your step-by-step reasoning.
+    3. Identify ANY violations of the rules.
+    4. Provide the final output in the required structured format.
     If no violations are found, set "status" to "PASS" and "compliance_results" to [].
     """
 
@@ -152,31 +158,26 @@ def audit_content_node(state: VideoAuditState) -> Dict[str, Any]:
     """
 
     try:
-        response = llm.invoke([
+        # Enforce structured output via function calling
+        structured_llm = llm.with_structured_output(AuditReport)
+        
+        audit_data = structured_llm.invoke([
             SystemMessage(content=system_prompt),
             HumanMessage(content=user_message)
         ])
         
-        # --- Clean the (data) Markdown if present (```json ... ```) ---
-        content = response.content
-        if "```" in content:
-            # Regex to find JSON inside code blocks
-            content = re.search(r"```(?:json)?(.*?)```", content, re.DOTALL).group(1)
-            
-        audit_data = json.loads(content.strip())
-        
         # store the compliance results in the state 
         # and return the final status and report - as python dict
         return {
-            "compliance_results": audit_data.get("compliance_results", []),
-            "final_status": audit_data.get("status", "FAIL"),
-            "final_report": audit_data.get("final_report", "No report generated.")
+            "compliance_results": [issue.dict() for issue in audit_data.compliance_results],
+            "final_status": audit_data.status,
+            "final_report": audit_data.final_report
         }
 
     except Exception as e:
         logger.error(f"System Error in Auditor Node: {str(e)}")
         # Log the raw response to see what went wrong
-        logger.error(f"Raw LLM Response: {response.content if 'response' in locals() else 'None'}")
+        logger.error(f"Structured Data: {audit_data if 'audit_data' in locals() else 'None'}")
         return {
             "errors": [str(e)],
             "final_status": "FAIL"

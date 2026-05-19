@@ -46,7 +46,7 @@ class VideoIndexerService:
         logger.info(f"Downloading YouTube video: {url}")
         
         ydl_opts = {
-         'format': 'best',
+         'format': 'best[height<=480]/best', # Limit to 480p for 5x faster download/upload/indexing, while keeping OCR readable
          'outtmpl': output_path, # output template
          'quiet': False,
          'no_warnings': False,
@@ -114,8 +114,8 @@ class VideoIndexerService:
             elif state == "Quarantined":
                 raise Exception("Video Quarantined (Copyright/Content Policy Violation).")
             
-            logger.info(f"Status: {state}... waiting 30s")
-            time.sleep(30)
+            logger.info(f"Status: {state}... waiting 10s")
+            time.sleep(10)
 
     def extract_data(self, vi_json):
         """Parses the JSON into our State format."""

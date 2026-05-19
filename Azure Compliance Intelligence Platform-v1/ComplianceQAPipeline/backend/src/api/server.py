@@ -25,6 +25,8 @@ logging.basicConfig(level=logging.INFO)
 
 logger = logging.getLogger("api-server")  
 
+from fastapi.middleware.cors import CORSMiddleware
+
 # CREATE FASTAPI APPLICATION 
 app = FastAPI(
     title="Azure AI Compliance API",
@@ -32,10 +34,19 @@ app = FastAPI(
     version="1.0.0"
 )
 
+# ADD CORS MIDDLEWARE
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Allows all origins (update in production)
+    allow_credentials=True,
+    allow_methods=["*"],  # Allows all methods
+    allow_headers=["*"],  # Allows all headers
+)
 
-# IN-MEMORY JOB STORE (For async status tracking)
-# In production, use Redis or a Database
-jobs = {}
+
+from backend.src.services.database import db_service
+
+# IN-MEMORY JOB STORE REMOVED. Using Cosmos DB.
 
 #  DEFINE DATA MODELS (PYDANTIC) 
 
@@ -59,6 +70,7 @@ class AuditRequest(BaseModel):
     }
     """
     video_url: str  # Required string field
+    video_name: Optional[str] = None # Optional user-defined name
 
 
 # --- NESTED MODEL ---
@@ -95,22 +107,24 @@ def run_audit_background(session_id: str, initial_inputs: dict):
     """
     Background task to execute the compliance graph without blocking the API.
     """
+    video_id = initial_inputs.get("video_id")
+    video_url = initial_inputs.get("video_url")
     try:
-        jobs[session_id]["status"] = "processing"
+        db_service.create_or_update_audit(session_id, video_url, video_id, status="processing")
         final_state = compliance_graph.invoke(initial_inputs)
         
-        jobs[session_id]["status"] = "completed"
-        jobs[session_id]["result"] = AuditResponse(
+        result_payload = AuditResponse(
             session_id=session_id,
             video_id=final_state.get("video_id"),
             status=final_state.get("final_status", "UNKNOWN"),
             final_report=final_state.get("final_report", "No report generated."),
             compliance_results=final_state.get("compliance_results", [])
         ).model_dump()
+        
+        db_service.create_or_update_audit(session_id, video_url, video_id, status="completed", result=result_payload)
     except Exception as e:
         logger.error(f"Background Audit Failed for {session_id}: {str(e)}")
-        jobs[session_id]["status"] = "failed"
-        jobs[session_id]["error"] = str(e)
+        db_service.create_or_update_audit(session_id, video_url, video_id, status="failed", error=str(e))
 
 #DEFINE MAIN ENDPOINT
 @app.post("/audit", response_model=JobResponse, status_code=202)
@@ -135,22 +149,27 @@ async def audit_video(request: AuditRequest, background_tasks: BackgroundTasks):
     #  GENERATE SESSION ID
     session_id = str(uuid.uuid4())
     
-    video_id_short = f"vid_{session_id[:8]}" 
-    # Easier to reference in logs/UI than full UUID
+    # Use user-provided name + short UUID to guarantee uniqueness for Azure Video Indexer
+    if request.video_name:
+        # Strip spaces and make safe, then append ID
+        safe_name = request.video_name.replace(" ", "_")
+        video_id_short = f"{safe_name}_{session_id[:8]}"
+    else:
+        video_id_short = f"vid_{session_id[:8]}" 
     
     #  LOG INCOMING REQUEST 
-    logger.info(f"Received Audit Request: {request.video_url} (Session: {session_id})")
+    logger.info(f"Received Audit Request: {request.video_url} (Name: {video_id_short}, Session: {session_id})")
 
     initial_inputs = {
         "video_url": request.video_url,  # From the API request
-        "video_id": video_id_short,      # Generated ID
+        "video_id": video_id_short,      # Custom name or generated ID
         "compliance_results": [],        # Will be populated by Auditor
         "errors": []                     # Tracks any processing errors
     }
 
     try:
         #  STORE JOB AND START BACKGROUND TASK
-        jobs[session_id] = {"status": "pending"}
+        db_service.create_or_update_audit(session_id, request.video_url, video_id_short, status="pending")
         background_tasks.add_task(run_audit_background, session_id, initial_inputs)
         
         return JobResponse(
@@ -167,14 +186,46 @@ async def audit_video(request: AuditRequest, background_tasks: BackgroundTasks):
         )
 
 @app.get("/audit/{session_id}")
-async def get_audit_status(session_id: str):
+async def get_audit_status(session_id: str, video_id: Optional[str] = None):
     """
     Endpoint to check the real-time status of a background audit job.
+    Since we partition by video_id, providing it helps, but we can query if not available.
+    For simplicity, if video_id isn't provided, we might fail point reads, so we need to pass it or query.
+    Actually, we can just do a query if video_id is not passed.
     """
-    job = jobs.get(session_id)
-    if not job:
+    if db_service.client:
+        # Cross partition query since video_id is not in path
+        query = f"SELECT * FROM c WHERE c.id = '{session_id}'"
+        items = list(db_service.container.query_items(query=query, enable_cross_partition_query=True))
+        if items:
+            return items[0]
         raise HTTPException(status_code=404, detail="Job not found")
-    return job
+    else:
+        # Fallback if DB is not configured (should not happen in prod)
+        raise HTTPException(status_code=500, detail="Database not configured")
+
+@app.get("/audits")
+async def get_all_audits():
+    """
+    Endpoint to fetch audit history (lean metadata).
+    """
+    if db_service.client:
+        return db_service.get_all_audits()
+    else:
+        return []
+
+@app.delete("/audit/{session_id}")
+async def delete_audit_record(session_id: str):
+    """
+    Endpoint to delete a specific audit from the history.
+    """
+    if db_service.client:
+        success = db_service.delete_audit(session_id)
+        if success:
+            return {"message": "Audit deleted successfully."}
+        raise HTTPException(status_code=404, detail="Audit not found or could not be deleted.")
+    else:
+        raise HTTPException(status_code=500, detail="Database not configured")
 
 # HEALTH CHECK ENDPOINT
 @app.get("/health")
