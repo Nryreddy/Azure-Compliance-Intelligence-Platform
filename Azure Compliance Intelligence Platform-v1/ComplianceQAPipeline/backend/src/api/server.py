@@ -1,6 +1,6 @@
 import uuid       
 import logging    
-from fastapi import FastAPI, HTTPException  
+from fastapi import FastAPI, HTTPException, BackgroundTasks
 # HTTPException = handles errors with proper HTTP status codes
 
 from pydantic import BaseModel  
@@ -32,6 +32,10 @@ app = FastAPI(
     version="1.0.0"
 )
 
+
+# IN-MEMORY JOB STORE (For async status tracking)
+# In production, use Redis or a Database
+jobs = {}
 
 #  DEFINE DATA MODELS (PYDANTIC) 
 
@@ -80,10 +84,38 @@ class AuditResponse(BaseModel):
     final_report: str                         # LLM summary
     compliance_results: List[ComplianceIssue] # List of violations
 
-#DEFINE MAIN ENDPOINT
-@app.post("/audit", response_model=AuditResponse)
+class JobResponse(BaseModel):
+    """
+    Response returned immediately when an audit is accepted.
+    """
+    session_id: str
+    message: str
 
-async def audit_video(request: AuditRequest):
+def run_audit_background(session_id: str, initial_inputs: dict):
+    """
+    Background task to execute the compliance graph without blocking the API.
+    """
+    try:
+        jobs[session_id]["status"] = "processing"
+        final_state = compliance_graph.invoke(initial_inputs)
+        
+        jobs[session_id]["status"] = "completed"
+        jobs[session_id]["result"] = AuditResponse(
+            session_id=session_id,
+            video_id=final_state.get("video_id"),
+            status=final_state.get("final_status", "UNKNOWN"),
+            final_report=final_state.get("final_report", "No report generated."),
+            compliance_results=final_state.get("compliance_results", [])
+        ).model_dump()
+    except Exception as e:
+        logger.error(f"Background Audit Failed for {session_id}: {str(e)}")
+        jobs[session_id]["status"] = "failed"
+        jobs[session_id]["error"] = str(e)
+
+#DEFINE MAIN ENDPOINT
+@app.post("/audit", response_model=JobResponse, status_code=202)
+
+async def audit_video(request: AuditRequest, background_tasks: BackgroundTasks):
     """
     Main API endpoint that triggers the compliance audit workflow.
     
@@ -117,34 +149,32 @@ async def audit_video(request: AuditRequest):
     }
 
     try:
-        #  INVOKE LANGGRAPH WORKFLOW
-        # SAME logic from main.py - just wrapped in an API
-        final_state = compliance_graph.invoke(initial_inputs)
-        # ↑ Blocking call - waits for entire workflow to complete
-        # ↑ Flow: START → Indexer → Auditor → END
+        #  STORE JOB AND START BACKGROUND TASK
+        jobs[session_id] = {"status": "pending"}
+        background_tasks.add_task(run_audit_background, session_id, initial_inputs)
         
-        
-        #  MAP GRAPH OUTPUT TO API RESPONSE
-        return AuditResponse(
+        return JobResponse(
             session_id=session_id,
-            video_id=final_state.get("video_id"),  
-            
-            status=final_state.get("final_status", "UNKNOWN"),
-            
-            final_report=final_state.get("final_report", "No report generated."),
-            
-            compliance_results=final_state.get("compliance_results", [])
+            message="Audit job accepted and running in background. Poll /audit/{session_id} for status."
         )
-        # FastAPI automatically converts this Pydantic object to JSON
 
     except Exception as e:
-        logger.error(f"Audit Failed: {str(e)}")
+        logger.error(f"Audit Failed to start: {str(e)}")
         
         raise HTTPException(
             status_code=500,  # 500 = Internal Server Error
-            detail=f"Workflow Execution Failed: {str(e)}"
-            # Returns this error message to the client
+            detail=f"Workflow Execution Failed to start: {str(e)}"
         )
+
+@app.get("/audit/{session_id}")
+async def get_audit_status(session_id: str):
+    """
+    Endpoint to check the real-time status of a background audit job.
+    """
+    job = jobs.get(session_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    return job
 
 # HEALTH CHECK ENDPOINT
 @app.get("/health")

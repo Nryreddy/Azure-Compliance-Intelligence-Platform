@@ -42,21 +42,22 @@ def index_video_node(state:VideoAuditState) -> Dict[str,Any]:
     try:
         vi_service = VideoIndexerService()
 
-        #download   - yt-dlp library used for downloading youtube video
-        if "youtube.com" in video_url or "youtu.be" in video_url:
-            local_path = vi_service.download_youtube_video(video_url, output_path=local_filename)
-        else:
-            raise Exception("Please provide valid youtube url")
-        
-        #upload - from local to azure video indexer
-        azure_video_id = vi_service.upload_video(local_path,video_name=video_id_input)
-         
-        logger.info(f"Upload Successful. Azure ID : {azure_video_id}")
-
-        #cleanup - remove local file
-        if os.path.exists(local_path):
-            os.remove(local_path)
-            logger.info(f"Deleted Local File : {local_path}")
+        try:
+            #download   - yt-dlp library used for downloading youtube video
+            if "youtube.com" in video_url or "youtu.be" in video_url:
+                local_path = vi_service.download_youtube_video(video_url, output_path=local_filename)
+            else:
+                raise Exception("Please provide valid youtube url")
+            
+            #upload - from local to azure video indexer
+            azure_video_id = vi_service.upload_video(local_path,video_name=video_id_input)
+             
+            logger.info(f"Upload Successful. Azure ID : {azure_video_id}")
+        finally:
+            #cleanup - remove local file
+            if os.path.exists(local_filename):
+                os.remove(local_filename)
+                logger.info(f"Deleted Local File : {local_filename}")
 
         #wait - until video is processed and insights are extracted --- pauses the code
         raw_insights = vi_service.wait_for_processing(azure_video_id)
