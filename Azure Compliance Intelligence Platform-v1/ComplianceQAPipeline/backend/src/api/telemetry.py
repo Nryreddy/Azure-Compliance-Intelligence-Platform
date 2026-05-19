@@ -3,7 +3,7 @@ import logging
 from azure.monitor.opentelemetry import configure_azure_monitor  
 
 # This separates telemetry logs from your main application logs
-logger = logging.getLogger("AI-COMPLIANCE-PLATFORM-TELEMETRY")
+logger = logging.getLogger("Insights-Compliance-Intelligence-Platform")
 
 
 def setup_telemetry():
@@ -33,7 +33,7 @@ def setup_telemetry():
         # 2. Starts background thread to send data to Azure
         configure_azure_monitor(
             connection_string=connection_string,  # Where to send data
-            logger_name="AI-COMPLIANCE-PLATFORM-TELEMETRY"   # Optional: custom tracer name
+            logger_name="Insights-Compliance-Intelligence-Platform"   # Optional: custom tracer name
         )
         logger.info(" Azure Monitor Tracking Enabled & Connected!")
         
