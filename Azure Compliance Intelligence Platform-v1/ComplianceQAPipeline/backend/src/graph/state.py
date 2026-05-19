@@ -1,6 +1,6 @@
 from typing import TypedDict, Annotated, Optional, List, Dict, Any
 import operator
-from langgraph.graph import MessageState, StateGraph, END, START
+from langgraph.graph import MessagesState, StateGraph, END, START
 
 class ComplianceIssue(TypedDict):
     """Represents a compliance issue."""

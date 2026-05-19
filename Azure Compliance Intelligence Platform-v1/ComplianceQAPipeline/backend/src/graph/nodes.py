@@ -44,7 +44,7 @@ def index_video_node(state:VideoAuditState) -> Dict[str,Any]:
 
         #download   - yt-dlp library used for downloading youtube video
         if "youtube.com" in video_url or "youtu.be" in video_url:
-            local_path = vi_service.download_youtube_video(video_url, output_filename=local_filename)
+            local_path = vi_service.download_youtube_video(video_url, output_path=local_filename)
         else:
             raise Exception("Please provide valid youtube url")
         
@@ -95,8 +95,7 @@ def audit_content_node(state: VideoAuditState) -> Dict[str, Any]:
     # Initialize Clients
     llm = AzureChatOpenAI(
         azure_deployment=os.getenv("AZURE_OPENAI_CHAT_DEPLOYMENT"),
-        api_version=os.getenv("AZURE_OPENAI_API_VERSION"),
-        temperature=0.0
+        api_version=os.getenv("AZURE_OPENAI_API_VERSION")
     )
 
     embeddings = AzureOpenAIEmbeddings(
