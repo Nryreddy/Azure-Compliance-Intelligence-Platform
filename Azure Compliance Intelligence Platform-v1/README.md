@@ -13,7 +13,7 @@ The platform operates on a robust, asynchronous agentic workflow orchestrated by
 
 Below is the system's operational architecture showing the ingestion, agentic auditing, and telemetry logging pipelines:
 
-<img width="1957" height="1416" alt="image" src="https://github.com/user-attachments/assets/4f4f6d97-f3f1-4cdb-839f-32a4c0896cc4" />
+<img width="1957" height="1416" alt="image" src="pics/Azure_multimodel_complaince_Agent.png" />
 
 *Figure 1: Full-scale Agentic Auditing & Policy Management Architecture.*
 
@@ -33,7 +33,7 @@ Below is the system's operational architecture showing the ingestion, agentic au
 
 | **Compliance Management Dashboard** | **Real-time Audit Results** |
 |:---:|:---:|
-|<img width="1547" height="927" alt="image" src="https://github.com/user-attachments/assets/1bcdc4a1-12d4-47af-a4b4-9e87e5f91260" />|<img width="1275" height="940" alt="image" src="https://github.com/user-attachments/assets/aafaf67b-cec0-43fc-8115-ca2c6f85e5ca" />|
+|<img width="1547" height="927" alt="image" src="pics/front_page.png" />|<img width="1275" height="940" alt="image" src="pics/aduit_results.png" />|
 | *Intuitive Glassmorphic dashboard with live ingestion monitoring* | *In-depth structured compliance reports & policy maps* |
 
 ---
@@ -48,7 +48,7 @@ With native OpenTelemetry instrumentation, the system maps all database calls, A
 * **Monitor API Pipelines**: Visualize real-time request volume, HTTP statuses, and backend bottlenecks under concurrent compliance audits.
 * **Audit External Dependencies**: Detect failures or slow responses in Azure OpenAI, Azure Cosmos DB, or Azure AI Search immediately.
 
-<img width="1738" height="918" alt="image" src="https://github.com/user-attachments/assets/4f4f9401-e598-4265-b174-51dab03f80f9" />
+<img width="1738" height="918" alt="image" src="pics/Insights_app_map.png" />
 
 *Figure 2: Live Azure Application Map showcasing service dependencies, request latencies, and execution streams.*
 
@@ -60,7 +60,7 @@ Every execution run is tracked in **LangSmith** to monitor LLM invocations and S
 
 | **LangSmith Execution Stream** | **Step-by-Step State Tracing** |
 |:---:|:---:|
-|<img width="1702" height="936" alt="image" src="https://github.com/user-attachments/assets/7d057ae4-65cd-45f3-a75a-2e2874960042" />|<img width="1911" height="915" alt="image" src="https://github.com/user-attachments/assets/4d43e5ac-291f-4b60-9d93-9f7a7970f88c" />|
+|<img width="1702" height="936" alt="image" src="pics/langsmith_dashboard.png" />|<img width="1911" height="915" alt="image" src="pics/langsmith_working_output.png" />|
 | *High-level runs overview detailing token counts, cost, latency, and status* | *Detailed step-by-step state visualization and LLM input/output pairs* |
 
 ---
@@ -96,7 +96,7 @@ Create a `.env` file inside the `ComplianceQAPipeline` directory containing your
 # Azure OpenAI Settings
 AZURE_OPENAI_API_KEY="your-api-key"
 AZURE_OPENAI_ENDPOINT="https://your-resource.openai.azure.com/"
-AZURE_OPENAI_API_VERSION="2024-08-01-preview"
+AZURE_OPENAI_API_VERSION="2024-12-01-preview"
 AZURE_OPENAI_CHAT_DEPLOYMENT="gpt-4o-mini"
 AZURE_OPENAI_EMBEDDING_DEPLOYMENT="text-embedding-3-large"
 
@@ -108,17 +108,21 @@ AZURE_SEARCH_INDEX_NAME="compliance-rules-index"
 # Azure Cosmos DB Settings
 COSMOS_ENDPOINT="https://your-cosmos-account.documents.azure.com:443/"
 COSMOS_KEY="your-cosmos-key"
-COSMOS_DATABASE_NAME="CompliancePlatformDB"
 
-# Azure Video Indexer Settings
-VIDEO_INDEXER_ACCOUNT_ID="your-vi-account-id"
-VIDEO_INDEXER_LOCATION="trial"  # or your resource group location
-VIDEO_INDEXER_API_KEY="your-vi-api-key"
+# Azure Video Indexer Settings (Authenticated via DefaultAzureCredential)
+AZURE_VI_NAME="Video-Indexer-Compliance-Intelligence"
+AZURE_VI_LOCATION="eastus"
+AZURE_VI_ACCOUNT_ID="your-vi-account-id"
+AZURE_SUBSCRIPTION_ID="your-azure-subscription-id"
+AZURE_RESOURCE_GROUP="your-resource-group-name"
+
+# Azure Monitor Telemetry Settings (Optional but Recommended)
+APPLICATIONINSIGHTS_CONNECTION_STRING="your-app-insights-connection-string"
 
 # LangSmith Settings (Optional but Recommended)
 LANGCHAIN_TRACING_V2="true"
 LANGCHAIN_API_KEY="your-langsmith-api-key"
-LANGCHAIN_PROJECT="azure-compliance-auditor"
+LANGCHAIN_PROJECT="Azure-Compliance-Intelligence-Platform"
 ```
 
 ### 2. Backend Installation & Execution
@@ -150,8 +154,8 @@ uv run python main.py
 ### 3. Frontend Installation & Execution
 
 ```bash
-# Navigate to the frontend directory
-cd frontend
+# Navigate to the frontend directory from the project root
+cd ComplianceQAPipeline/frontend
 
 # Install UI packages
 npm install
