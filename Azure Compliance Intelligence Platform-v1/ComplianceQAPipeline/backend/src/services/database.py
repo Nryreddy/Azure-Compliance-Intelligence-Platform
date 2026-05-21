@@ -92,9 +92,15 @@ class DatabaseService:
         if not self.client:
             return False
         try:
-            # We must fetch the item to get its partition key (video_id) for deletion
-            query = f"SELECT c.id, c.video_id FROM c WHERE c.id = '{session_id}'"
-            items = list(self.container.query_items(query=query, enable_cross_partition_query=True))
+            # We must fetch the item to get its partition key (video_id) for deletion.
+            # Use parameterized query to prevent injection attacks.
+            query = "SELECT c.id, c.video_id FROM c WHERE c.id = @session_id"
+            params = [{"name": "@session_id", "value": session_id}]
+            items = list(self.container.query_items(
+                query=query,
+                parameters=params,
+                enable_cross_partition_query=True
+            ))
             if not items:
                 logger.warning(f"Document {session_id} not found to delete.")
                 return False

@@ -4,7 +4,7 @@ const Navbar = ({ currentView, onNavigate }) => {
   return (
     <nav className="navbar container">
       <div className="nav-brand" style={{ cursor: 'pointer' }} onClick={() => onNavigate('home')}>
-        ComplianceQA
+        ComplianceAI
       </div>
       <ul className="nav-links">
         <li>

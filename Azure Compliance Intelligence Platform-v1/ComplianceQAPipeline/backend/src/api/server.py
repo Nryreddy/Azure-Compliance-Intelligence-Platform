@@ -1,3 +1,4 @@
+import os
 import uuid       
 import logging    
 from fastapi import FastAPI, HTTPException, BackgroundTasks
@@ -35,12 +36,17 @@ app = FastAPI(
 )
 
 # ADD CORS MIDDLEWARE
+# Origins are driven by the ALLOWED_ORIGINS environment variable (comma-separated).
+# Defaults to the local Vite dev server. Set this to your deployed frontend URL in production.
+_raw_origins = os.getenv("ALLOWED_ORIGINS", "http://localhost:5173")
+ALLOWED_ORIGINS = [o.strip() for o in _raw_origins.split(",") if o.strip()]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Allows all origins (update in production)
+    allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
-    allow_methods=["*"],  # Allows all methods
-    allow_headers=["*"],  # Allows all headers
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 
@@ -189,14 +195,17 @@ async def audit_video(request: AuditRequest, background_tasks: BackgroundTasks):
 async def get_audit_status(session_id: str, video_id: Optional[str] = None):
     """
     Endpoint to check the real-time status of a background audit job.
-    Since we partition by video_id, providing it helps, but we can query if not available.
-    For simplicity, if video_id isn't provided, we might fail point reads, so we need to pass it or query.
-    Actually, we can just do a query if video_id is not passed.
+    Uses a parameterized query to safely look up by session ID across partitions.
     """
     if db_service.client:
-        # Cross partition query since video_id is not in path
-        query = f"SELECT * FROM c WHERE c.id = '{session_id}'"
-        items = list(db_service.container.query_items(query=query, enable_cross_partition_query=True))
+        # Parameterized cross-partition query — prevents query injection via the URL path.
+        query = "SELECT * FROM c WHERE c.id = @session_id"
+        params = [{"name": "@session_id", "value": session_id}]
+        items = list(db_service.container.query_items(
+            query=query,
+            parameters=params,
+            enable_cross_partition_query=True
+        ))
         if items:
             return items[0]
         raise HTTPException(status_code=404, detail="Job not found")

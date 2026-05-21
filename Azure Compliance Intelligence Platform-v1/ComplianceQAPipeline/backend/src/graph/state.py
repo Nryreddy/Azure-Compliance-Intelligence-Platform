@@ -1,47 +1,46 @@
 from typing import TypedDict, Annotated, Optional, List, Dict, Any
 import operator
-from langgraph.graph import MessagesState, StateGraph, END, START
+from langgraph.graph import StateGraph, END, START
+
 
 class ComplianceIssue(TypedDict):
-    """Represents a compliance issue."""
+    """Represents a single compliance violation found in the video."""
     category: str
-    description: str # detail of the violation
-    severity: str # critical or warning
-    timestamp: Optional[str]
-    
+    description: str    # Detailed explanation with timestamp/text evidence
+    severity: str       # CRITICAL or WARNING
 
-# define global graph state
+
+# ---------------------------------------------------------------------------
+# Global graph state — shared across all nodes in the workflow
+# ---------------------------------------------------------------------------
 class VideoAuditState(TypedDict):
-    """Defines the data schema for langgraph execution content
-    Main container - holds all the information about the audit
-    from the inintial url to the final report"""
-    #input parameters 
+    """
+    Master state container for the compliance audit workflow.
+
+    Fields flow through nodes in this order:
+        Input → Indexer → RAG Retriever → Auditor → Synthesiser → Output
+    """
+
+    # --- Input ---
     video_url: str
     video_id: str
 
-    # ingestion and extraction data    -from the video url
-    local_file_path : Optional[str]
-    video_metadata : Dict[str,Any]
-    transcript : Optional[str]
-    ocr_text : List[str]
+    # --- Ingestion / Extraction (populated by indexer node) ---
+    local_file_path: Optional[str]
+    video_metadata: Dict[str, Any]
+    transcript: Optional[str]
+    ocr_text: List[str]
 
-    #analysis output
-    # stores the list of compliance issues found in the video
-    compliance_results : Annotated[List[ComplianceIssue],operator.add]
+    # --- RAG context (populated by rag_retriever node) ---
+    retrieved_rules: Optional[str]       # Full text of retrieved compliance rules
 
-    # final status
-    final_status : str # PASS|FAIL
-    final_report : str # markdown format
+    # --- Analysis output (populated by auditor node) ---
+    compliance_results: Annotated[List[ComplianceIssue], operator.add]
 
-    # system observability 
-    # errors : API timeout, list of system level errors
-    errors : Annotated[List[str],operator.add]
+    # --- Report output (populated by synthesiser node) ---
+    final_status: str     # PASS | FAIL
+    final_report: str     # Rich markdown report
 
-
-
-
-        
-    
-
-
-
+    # --- Error handling ---
+    error_message: Optional[str]                   # Set by error_handler node
+    errors: Annotated[List[str], operator.add]     # Cumulative system-level errors

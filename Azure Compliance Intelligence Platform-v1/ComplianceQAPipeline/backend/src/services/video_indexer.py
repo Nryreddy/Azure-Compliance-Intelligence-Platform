@@ -95,15 +95,29 @@ class VideoIndexerService:
         return response.json().get("id")
 
     def wait_for_processing(self, video_id):
-        """Polls status until complete."""
+        """Polls status until complete.
+        
+        Tokens are fetched once before the loop (ARM tokens are valid for ~1 hour).
+        A 401 response triggers a single token refresh before retrying.
+        """
         logger.info(f"Waiting for video {video_id} to process...")
+
+        # Acquire tokens once — re-use across poll iterations to avoid redundant API calls.
+        arm_token = self.get_access_token()
+        vi_token = self.get_account_token(arm_token)
+
         while True:
-            arm_token = self.get_access_token()
-            vi_token = self.get_account_token(arm_token)
-            
             url = f"https://api.videoindexer.ai/{self.location}/Accounts/{self.account_id}/Videos/{video_id}/Index"
             params = {"accessToken": vi_token}
             response = requests.get(url, params=params)
+
+            # Refresh token once if Azure signals it has expired (401 Unauthorized).
+            if response.status_code == 401:
+                logger.info("Access token expired during polling — refreshing...")
+                arm_token = self.get_access_token()
+                vi_token = self.get_account_token(arm_token)
+                response = requests.get(url, params={"accessToken": vi_token})
+
             data = response.json()
             
             state = data.get("state")
