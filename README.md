@@ -1,8 +1,13 @@
-# Azure Compliance Intelligence Platform
+# Agentic Multimodal Compliance Auditor on Azure  <img width="45" height="45" alt="download" src="https://github.com/user-attachments/assets/64a9e3f3-bcb6-4763-8cec-b3ebe1ad7f95" />  <img width="65" height="65" alt="download" src="https://github.com/user-attachments/assets/f5f98c99-88d7-44d8-9f3d-4435b5a91458" />  <img width="65" height="65" alt="download" src="https://github.com/user-attachments/assets/b87f4f85-0ec4-4260-adf5-d22a8d1c0c0b" />
+
 
 [![Tech Stack](https://img.shields.io/badge/Stack-FastAPI%20%7C%20React%20%7C%20LangGraph%20%7C%20Azure-blue?style=flat-square)](https://azure.microsoft.com)
 [![License](https://img.shields.io/badge/License-MIT-green?style=flat-square)](LICENSE)
 
+Problem : 
+Companies manually review large volumes of video/audio content for regulatory and policy compliance.
+
+Solution : 
 An enterprise-grade, **Azure-native agentic compliance intelligence platform** designed to audit multimodal media content against dynamic regulatory policies. The system orchestrates an **agentic LangGraph workflow** fully integrated with the **Azure Ecosystem** to index audio-visual streams via **Azure Video Indexer**, query an **Azure AI Search** vector database via RAG, perform structured audit reasoning using **Azure OpenAI Service**, and synthesize detailed reports, all backed by a real-time policy management panel and monitored via **Azure Monitor**.
 
 ---
@@ -28,6 +33,14 @@ Below is the system's operational architecture showing the ingestion, agentic au
 * **Azure Cosmos DB Synchronization**: Syncs document ingestion, indexing states, and audit transaction records in **Azure Cosmos DB** in real-time.
 
 ---
+Manual compliance review is expensive, inconsistent, and difficult to scale across large volumes of multimedia content.
+
+This platform demonstrates how agentic AI systems can:
+- reduce manual audit overhead
+- standardize policy enforcement
+- provide traceable reasoning
+- improve observability of AI decisions
+- support enterprise governance workflows
 
 ## 🖥️ Operational Dashboard
 
