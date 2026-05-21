@@ -13,7 +13,7 @@ The platform operates on a robust, asynchronous agentic workflow orchestrated by
 
 Below is the system's operational architecture showing the ingestion, agentic auditing, and telemetry logging pipelines:
 
-![Agentic Auditing Architecture](../pics/Azure_multimodel_complaince_Agent.png)
+<img width="1957" height="1416" alt="image" src="https://github.com/user-attachments/assets/4f4f6d97-f3f1-4cdb-839f-32a4c0896cc4" />
 
 *Figure 1: Full-scale Agentic Auditing & Policy Management Architecture.*
 
@@ -33,7 +33,7 @@ Below is the system's operational architecture showing the ingestion, agentic au
 
 | **Compliance Management Dashboard** | **Real-time Audit Results** |
 |:---:|:---:|
-| ![Dashboard](../pics/front_page.png) | ![Audit Results](../pics/aduit_results.png) |
+|<img width="1547" height="927" alt="image" src="https://github.com/user-attachments/assets/1bcdc4a1-12d4-47af-a4b4-9e87e5f91260" />|<img width="1275" height="940" alt="image" src="https://github.com/user-attachments/assets/aafaf67b-cec0-43fc-8115-ca2c6f85e5ca" />|
 | *Intuitive Glassmorphic dashboard with live ingestion monitoring* | *In-depth structured compliance reports & policy maps* |
 
 ---
@@ -48,7 +48,8 @@ With native OpenTelemetry instrumentation, the system maps all database calls, A
 * **Monitor API Pipelines**: Visualize real-time request volume, HTTP statuses, and backend bottlenecks under concurrent compliance audits.
 * **Audit External Dependencies**: Detect failures or slow responses in Azure OpenAI, Azure Cosmos DB, or Azure AI Search immediately.
 
-![Application Map](../pics/Insights_app_map.png)
+<img width="1738" height="918" alt="image" src="https://github.com/user-attachments/assets/4f4f9401-e598-4265-b174-51dab03f80f9" />
+
 *Figure 2: Live Azure Application Map showcasing service dependencies, request latencies, and execution streams.*
 
 ### 2. LangGraph Agentic Tracing (LangSmith)
@@ -59,8 +60,8 @@ Every execution run is tracked in **LangSmith** to monitor LLM invocations and S
 
 | **LangSmith Execution Stream** | **Step-by-Step State Tracing** |
 |:---:|:---:|
-| ![LangSmith Runs](../pics/langsmith_dashboard.png) | ![LangSmith Details](../pics/langsmith_working.png) |
-| *High-level runs overview detailing token counts, latency, and status* | *Detailed step-by-step state visualization and LLM input/output pairs* |
+|<img width="1702" height="936" alt="image" src="https://github.com/user-attachments/assets/7d057ae4-65cd-45f3-a75a-2e2874960042" />|<img width="1911" height="915" alt="image" src="https://github.com/user-attachments/assets/4d43e5ac-291f-4b60-9d93-9f7a7970f88c" />|
+| *High-level runs overview detailing token counts, cost, latency, and status* | *Detailed step-by-step state visualization and LLM input/output pairs* |
 
 ---
 
