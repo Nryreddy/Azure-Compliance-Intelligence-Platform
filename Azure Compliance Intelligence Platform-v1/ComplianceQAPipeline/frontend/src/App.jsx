@@ -5,6 +5,7 @@ import HeroSection from './components/HeroSection';
 import AuditStatusLoader from './components/AuditStatusLoader';
 import ComplianceReportDashboard from './components/ComplianceReportDashboard';
 import HistoryPage from './components/HistoryPage';
+import KnowledgeBaseManager from './components/KnowledgeBaseManager';
 import { pollAuditStatus } from './api';
 
 function App() {
@@ -75,6 +76,11 @@ function App() {
           <>
             <NetworkBackground />
             <HistoryPage onViewAudit={handleViewPastAudit} />
+          </>
+        ) : currentView === 'knowledge' ? (
+          <>
+            <NetworkBackground />
+            <KnowledgeBaseManager />
           </>
         ) : (
           <>

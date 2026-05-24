@@ -19,6 +19,15 @@ const Navbar = ({ currentView, onNavigate }) => {
         <li>
           <a 
             href="#" 
+            onClick={(e) => { e.preventDefault(); onNavigate('knowledge'); }}
+            style={{ color: currentView === 'knowledge' ? 'var(--primary)' : 'var(--text-light)' }}
+          >
+            Knowledge Base
+          </a>
+        </li>
+        <li>
+          <a 
+            href="#" 
             onClick={(e) => { e.preventDefault(); onNavigate('history'); }}
             style={{ color: currentView === 'history' ? 'var(--primary)' : 'var(--text-light)' }}
           >
