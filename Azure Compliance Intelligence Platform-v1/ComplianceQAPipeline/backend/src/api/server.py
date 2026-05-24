@@ -1,7 +1,7 @@
 import os
 import uuid       
 import logging    
-from fastapi import FastAPI, HTTPException, BackgroundTasks
+from fastapi import FastAPI, HTTPException, BackgroundTasks, File, UploadFile
 # HTTPException = handles errors with proper HTTP status codes
 
 from pydantic import BaseModel  
@@ -235,6 +235,190 @@ async def delete_audit_record(session_id: str):
         raise HTTPException(status_code=404, detail="Audit not found or could not be deleted.")
     else:
         raise HTTPException(status_code=500, detail="Database not configured")
+
+def parse_and_index_pdf(file_path, filename: str) -> int:
+    """
+    Parses a PDF file, splits it into chunks, generates embeddings, 
+    and uploads to Azure AI Search. Returns the number of chunks indexed.
+    """
+    from langchain_community.document_loaders import PyPDFLoader
+    from langchain_text_splitters import RecursiveCharacterTextSplitter
+    from backend.src.graph.nodes import get_vector_store
+    import hashlib
+    from datetime import datetime, timezone
+    from pathlib import Path
+
+    loader = PyPDFLoader(str(file_path))
+    raw_docs = loader.load()
+    
+    # Matching splitter settings in index_documents.py
+    chunk_size = int(os.getenv("CHUNK_SIZE", "1000"))
+    chunk_overlap = int(os.getenv("CHUNK_OVERLAP", "200"))
+    splitter = RecursiveCharacterTextSplitter(
+        chunk_size=chunk_size,
+        chunk_overlap=chunk_overlap,
+    )
+    
+    splits = splitter.split_documents(raw_docs)
+    indexed_at = datetime.now(timezone.utc).isoformat()
+    
+    for index, doc in enumerate(splits):
+        page = doc.metadata.get("page", 0)
+        content_hash = hashlib.sha256(doc.page_content.encode("utf-8")).hexdigest()[:16]
+        
+        doc.metadata.update({
+            "source": filename,
+            "source_path": filename, # Using logical filename
+            "page": page,
+            "chunk_index": index,
+            "content_hash": content_hash,
+            "indexed_at": indexed_at,
+            "chunk_id": f"{Path(filename).stem}-p{page}-c{index}-{content_hash}"
+        })
+        
+    vector_store = get_vector_store()
+    vector_store.add_documents(splits)
+    
+    return len(splits)
+
+@app.post("/knowledge/upload")
+async def upload_kb_file(background_tasks: BackgroundTasks, file: UploadFile = File(...)):
+    """
+    Uploads a compliance PDF file, parses, chunks, embeds, and indexes it 
+    into Azure AI Search, and records metadata in Cosmos DB.
+    """
+    import tempfile
+    import shutil
+    from pathlib import Path
+
+    filename = file.filename
+    if not filename.endswith(".pdf"):
+        raise HTTPException(status_code=400, detail="Only PDF files are supported.")
+        
+    logger.info(f"Starting upload & index for KB file: {filename}")
+    
+    # Immediately record the file in Cosmos DB as 'indexing'
+    db_service.create_or_update_kb_file(filename, status="indexing")
+    
+    # Read the file content
+    try:
+        file_bytes = await file.read()
+        file_size = len(file_bytes)
+    except Exception as e:
+        db_service.create_or_update_kb_file(filename, status="failed", error=f"File read failed: {str(e)}")
+        raise HTTPException(status_code=400, detail=f"Failed to read file: {str(e)}")
+        
+    # Process it in a background task so the API is fast and doesn't time out
+    def process_and_index():
+        temp_dir = tempfile.mkdtemp()
+        temp_path = Path(temp_dir) / filename
+        try:
+            with open(temp_path, "wb") as f:
+                f.write(file_bytes)
+                
+            logger.info(f"Saved temporary file to {temp_path}. Parsing and indexing...")
+            chunk_count = parse_and_index_pdf(temp_path, filename)
+            
+            logger.info(f"Successfully indexed {chunk_count} chunks for {filename}")
+            db_service.create_or_update_kb_file(
+                filename, 
+                status="completed", 
+                size_bytes=file_size, 
+                chunk_count=chunk_count
+            )
+        except Exception as ex:
+            logger.error(f"Error indexing file {filename}: {str(ex)}")
+            db_service.create_or_update_kb_file(
+                filename, 
+                status="failed", 
+                size_bytes=file_size, 
+                error=str(ex)
+            )
+        finally:
+            # Clean up temp folder
+            if os.path.exists(temp_dir):
+                shutil.rmtree(temp_dir)
+                
+    background_tasks.add_task(process_and_index)
+    return {"message": f"File '{filename}' uploaded successfully. Indexing has started in the background."}
+
+@app.get("/knowledge/files")
+async def get_kb_files():
+    """
+    Returns the list of all files in the Knowledge Base tracked by Cosmos DB.
+    """
+    try:
+        return db_service.get_kb_files()
+    except Exception as e:
+        logger.error(f"Error fetching KB files: {str(e)}")
+        return []
+
+@app.delete("/knowledge/files/{filename}")
+async def delete_kb_file(filename: str):
+    """
+    Deletes a file from the knowledge base:
+    1. Removes all its vector chunks from Azure AI Search index
+    2. Deletes the file metadata record from Cosmos DB
+    """
+    logger.info(f"Received Request to delete KB file: {filename}")
+    
+    endpoint = os.getenv("AZURE_SEARCH_ENDPOINT")
+    api_key = os.getenv("AZURE_SEARCH_API_KEY")
+    index_name = os.getenv("AZURE_SEARCH_INDEX_NAME")
+    
+    if not endpoint or not api_key or not index_name:
+        raise HTTPException(status_code=500, detail="Azure Search is not configured.")
+        
+    try:
+        # 1. Search for chunks associated with the filename in Azure AI Search
+        from azure.core.credentials import AzureKeyCredential
+        from azure.search.documents import SearchClient
+        import json
+        
+        search_client = SearchClient(
+            endpoint=endpoint,
+            index_name=index_name,
+            credential=AzureKeyCredential(api_key)
+        )
+        
+        logger.info(f"Searching Azure AI Search for chunks containing: {filename}")
+        
+        # Query for the exact filename string inside the metadata
+        results = search_client.search(
+            search_text=f'"{filename}"',
+            select=["id", "metadata"],
+            top=5000  # High limit to fetch all chunks
+        )
+        
+        chunk_ids_to_delete = []
+        for doc in results:
+            metadata_str = doc.get("metadata", "")
+            if metadata_str:
+                try:
+                    meta = json.loads(metadata_str)
+                    if meta.get("source") == filename:
+                        chunk_ids_to_delete.append(doc["id"])
+                except Exception as ex:
+                    logger.warning(f"Error parsing chunk metadata: {ex}")
+                    
+        logger.info(f"Found {len(chunk_ids_to_delete)} chunks to delete for {filename}")
+        
+        # Delete from Azure AI Search
+        if chunk_ids_to_delete:
+            delete_payload = [{"id": cid} for cid in chunk_ids_to_delete]
+            search_client.delete_documents(documents=delete_payload)
+            logger.info(f"Successfully deleted chunks from Azure AI Search.")
+            
+        # 2. Delete from Cosmos DB
+        db_success = db_service.delete_kb_file(filename)
+        if not db_success:
+            logger.warning(f"Could not find metadata record in Cosmos DB to delete: {filename}")
+            
+        return {"message": f"Successfully deleted {filename} and its {len(chunk_ids_to_delete)} vector chunks."}
+        
+    except Exception as e:
+        logger.error(f"Failed to delete KB file {filename}: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to delete file: {str(e)}")
 
 # HEALTH CHECK ENDPOINT
 @app.get("/health")

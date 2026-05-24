@@ -29,6 +29,12 @@ class DatabaseService:
                 id=self.container_name, 
                 partition_key=PartitionKey(path="/video_id")
             )
+            
+            # Create container for knowledge base files
+            self.kb_container = self.database.create_container_if_not_exists(
+                id="KnowledgeBase", 
+                partition_key=PartitionKey(path="/filename")
+            )
             logger.info("Connected to Cosmos DB successfully.")
         except Exception as e:
             logger.error(f"Failed to connect to Cosmos DB: {e}")
@@ -111,6 +117,60 @@ class DatabaseService:
             return True
         except Exception as e:
             logger.error(f"Error deleting document {session_id}: {e}")
+            return False
+
+    def create_or_update_kb_file(self, filename: str, status: str, size_bytes: int = 0, chunk_count: int = 0, error: str = None):
+        """Creates or updates a knowledge base file record in Cosmos DB"""
+        if not self.client:
+            return
+
+        document = {
+            "id": filename, # Using filename as unique ID since filenames are unique keys in KB
+            "filename": filename,
+            "status": status,
+            "size_bytes": size_bytes,
+            "chunk_count": chunk_count,
+            "timestamp": datetime.utcnow().isoformat() + "Z"
+        }
+        
+        if error:
+            document["error"] = error
+
+        try:
+            self.kb_container.upsert_item(document)
+            logger.info(f"Upserted KB file record: {filename} ({status})")
+        except Exception as e:
+            logger.error(f"Error upserting KB file {filename}: {e}")
+
+    def get_kb_files(self):
+        """Fetches all knowledge base files"""
+        if not self.client:
+            return []
+            
+        query = "SELECT * FROM c ORDER BY c.timestamp DESC"
+        try:
+            items = list(self.kb_container.query_items(
+                query=query,
+                enable_cross_partition_query=True
+            ))
+            return items
+        except Exception as e:
+            logger.error(f"Error querying KB files: {e}")
+            return []
+
+    def delete_kb_file(self, filename: str) -> bool:
+        """Deletes a knowledge base file record from Cosmos DB"""
+        if not self.client:
+            return False
+        try:
+            self.kb_container.delete_item(item=filename, partition_key=filename)
+            logger.info(f"Deleted KB file record {filename} successfully.")
+            return True
+        except exceptions.CosmosResourceNotFoundError:
+            logger.warning(f"KB file record {filename} not found to delete.")
+            return False
+        except Exception as e:
+            logger.error(f"Error deleting KB file record {filename}: {e}")
             return False
 
 # Singleton instance
